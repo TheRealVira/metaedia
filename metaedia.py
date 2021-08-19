@@ -1,6 +1,4 @@
 import requests, time, colorama, argparse, re
-from urllib.parse import urlparse, urljoin
-from bs4 import BeautifulSoup
 
 colorama.init()
 
