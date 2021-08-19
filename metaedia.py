@@ -12,14 +12,14 @@ RESET = colorama.Fore.RESET
 YELLOW = colorama.Fore.YELLOW
 
 internal_urls = set()
-query_urls = []
 wiki_source = ''
 
-def get_first_website_link(url, linkToSearchFor):
+def get_links(url, target):
     # domain name of the URL without the protocol
     domain_name = urlparse(url).netloc
     soup = BeautifulSoup(requests.get(url).content, "html.parser")
-    firstLink = ''
+    links = []
+    found = None
     for a_tag in soup.findAll("a"):
         href = a_tag.attrs.get("href")
         if href == "" or href is None or ':' in href or href.startswith(wiki_source) :
@@ -37,29 +37,33 @@ def get_first_website_link(url, linkToSearchFor):
             # already in the set
             continue
         internal_urls.add(href)
-        if firstLink == '':
-            firstLink = href
-        if href == linkToSearchFor:
-            firstLink = href
+        links.append(href)
+        if href == target:
+            found = href
             break
-            
-    query_urls.append(firstLink)
-    return firstLink
 
-def crawl(url, url2, max_urls):
+    return (found, links)
+
+def crawl(url, target, max_urls, query_urls):
     if max_urls == 0:
-        print(f"{RED}[!] Articles aren't connected. {RESET}")
-        return
-        
-    link = get_first_website_link(url, url2)
-    
-    if link == url2:
+        return False
+
+    (found, links) = get_links(url, target)
+
+    if found is not None:
         print(f"{GREEN}[!] Article connection found! {RESET}")
         for url in query_urls:
             print(f"- {url}")
-        return
-        
-    crawl(link, url2, max_urls-1)
+        print(f"- {found}")
+        return True
+
+    for link in links:
+        query_urls.append(link)
+        if crawl(link, target, max_urls-1, query_urls):
+            return True
+        query_urls.pop()
+
+    return False
 
 if __name__ == "__main__":
     import argparse
@@ -68,14 +72,15 @@ if __name__ == "__main__":
     parser.add_argument("article_b", help="Article name B.")
     parser.add_argument("-w", "--wiki-source", help="", default="https://de.wikipedia.org/wiki/", type=str)
     parser.add_argument("-m", "--max-urls", help="Number of max URLs to crawl.", default=50, type=int)
-    
+
     args = parser.parse_args()
     wiki_source = args.wiki_source
     article_a = wiki_source + args.article_a
     article_b = wiki_source + args.article_b
     max_urls = args.max_urls
-    
-    internal_urls.add(article_a)
-    query_urls.append(article_a)
 
-    crawl(article_a, article_b, max_urls=max_urls)
+    internal_urls.add(article_a)
+
+    if not crawl(article_a, article_b, max_urls, [article_a]):
+        print(f"{RED}[!] Articles aren't connected. {RESET}")
+
