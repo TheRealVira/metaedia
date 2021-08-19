@@ -1,4 +1,4 @@
-# metaedia
+![metaedia](metaedia.png)
 Crawls wikipedia and finds a connection between two articles ⛓️
 
 ## Example input and output
