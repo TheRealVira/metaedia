@@ -1,42 +1,34 @@
-import requests
+import requests, time, colorama, argparse, re
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-import colorama
 
 colorama.init()
 
-BLUE = colorama.Fore.BLUE
 GREEN = colorama.Fore.GREEN
 RED = colorama.Fore.RED
 RESET = colorama.Fore.RESET
-YELLOW = colorama.Fore.YELLOW
 
-internal_urls = set()
-wiki_source = ''
+discovered_urls = set()
+wiki_source = ""
+wiki_prefix = ""
+start_time = time.time()
+url_journey = []
+HTML_TAG_REGEX = re.compile(r"<a[^<>] ?href=([\'\"])(.*?)\1", re.IGNORECASE)
+
 
 def get_links(url, target):
-    # domain name of the URL without the protocol
-    domain_name = urlparse(url).netloc
-    soup = BeautifulSoup(requests.get(url).content, "html.parser")
     links = []
     found = None
-    for a_tag in soup.findAll("a"):
-        href = a_tag.attrs.get("href")
-        if href == "" or href is None or ':' in href or href.startswith(wiki_source) :
-            # href empty tag
+    for a_tag in HTML_TAG_REGEX.findall(requests.get(url).text):
+        href = f"{wiki_source}{a_tag[1]}"
+        if (
+            href in discovered_urls
+            or ":" in a_tag[1]
+            or not a_tag[1].startswith(wiki_prefix)
+        ):
             continue
-        # join the URL if it's relative (not absolute link)
-        href = urljoin(url, href)
-        parsed_href = urlparse(href)
-        # remove URL GET parameters, URL fragments, etc.
-        href = parsed_href.scheme + "://" + parsed_href.netloc + parsed_href.path
-        if not (bool(urlparse(href).netloc) and bool(urlparse(href).scheme)):
-            # not a valid URL
-            continue
-        if href in internal_urls:
-            # already in the set
-            continue
-        internal_urls.add(href)
+
+        discovered_urls.add(href)
         links.append(href)
         if href == target:
             found = href
@@ -44,43 +36,62 @@ def get_links(url, target):
 
     return (found, links)
 
-def crawl(url, target, max_urls, query_urls):
-    if max_urls == 0:
-        return False
 
-    (found, links) = get_links(url, target)
-
-    if found is not None:
-        print(f"{GREEN}[!] Article connection found! {RESET}")
-        for url in query_urls:
-            print(f"- {url}")
-        print(f"- {found}")
-        return True
-
-    for link in links:
-        query_urls.append(link)
-        if crawl(link, target, max_urls-1, query_urls):
-            return True
-        query_urls.pop()
+def crawl(url, target, max_urls):
+    currentLinkslist = [url]
+    for i in range(1, max_urls):
+        links = []
+        lastlink = ""
+        for link in currentLinkslist:
+            (found, links) = get_links(link, target)
+            lastlink = link
+            if found is not None:
+                url_journey.append(lastlink)
+                return True
+        currentLinkslist = links
+        url_journey.append(lastlink)
 
     return False
 
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Wikipedia crawler that will find a connection between article A and B.")
+    parser = argparse.ArgumentParser(
+        description="Wikipedia crawler that will find a connection between article A and B."
+    )
     parser.add_argument("article_a", help="Article name A.")
     parser.add_argument("article_b", help="Article name B.")
-    parser.add_argument("-w", "--wiki-source", help="", default="https://de.wikipedia.org/wiki/", type=str)
-    parser.add_argument("-m", "--max-urls", help="Number of max URLs to crawl.", default=50, type=int)
+    parser.add_argument(
+        "-w",
+        "--wiki-source",
+        help="Wikipedia base URL.",
+        default="https://de.wikipedia.org",
+        type=str,
+    )
+    parser.add_argument(
+        "-p",
+        "--wiki-prefix",
+        help="Wikipedia article prefix.",
+        default="/wiki/",
+        type=str,
+    )
+    parser.add_argument(
+        "-m", "--max-urls", help="Number of max URLs to crawl.", default=50, type=int
+    )
 
     args = parser.parse_args()
     wiki_source = args.wiki_source
-    article_a = wiki_source + args.article_a
-    article_b = wiki_source + args.article_b
+    wiki_prefix = args.wiki_prefix
+    article_a = "".join([wiki_source, wiki_prefix, args.article_a])
+    article_b = "".join([wiki_source, wiki_prefix, args.article_b])
     max_urls = args.max_urls
 
-    internal_urls.add(article_a)
-
-    if not crawl(article_a, article_b, max_urls, [article_a]):
+    discovered_urls.add(article_a)
+    if crawl(article_a, article_b, max_urls):
+        print(f"{GREEN}[!] Article connection found! {RESET}")
+        for url in url_journey:
+            print(f"- {url}")
+        print(f"- {article_b}")
+    else:
         print(f"{RED}[!] Articles aren't connected. {RESET}")
 
+    print(f"---- metaedia took {time.time() - start_time} seconds to complete! ----")
